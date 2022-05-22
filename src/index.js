@@ -2,17 +2,23 @@ const { Cluster } = require("puppeteer-cluster");
 const csvToJson = require("convert-csv-to-json");
 const scrapPage = require("./tasks/scrapPage");
 
+let counter = 0;
+
 (async () => {
+  process.env.LANG = "en-US";
   let fileInputName = "./data/joined_data.csv";
 
   const data = csvToJson.fieldDelimiter("\\").getJsonFromCsv(fileInputName);
 
   const cluster = await Cluster.launch({
     concurrency: Cluster.CONCURRENCY_CONTEXT,
-    maxConcurrency: 10,
+    maxConcurrency: 1,
+    puppeteerOptions: { headless: false, timeout: 60000 },
   });
 
   await cluster.task(async ({ page, data: url }) => {
+    counter++;
+
     try {
       await page.goto(url);
       const link = await page.$$eval(
@@ -20,15 +26,15 @@ const scrapPage = require("./tasks/scrapPage");
         (result) => result.map((value) => value.href)
       );
 
-      cluster.queue(link[0], scrapPage);
+      console.log("------------------------------------------------");
+      console.log(counter);
     } catch (error) {
+      console.log("ERROR");
       console.log(error);
     }
   });
 
-  let counter = 0;
   for (title of data) {
-    counter++;
     const date = title.releasedate ? title.releasedate : "";
     if (!title.imdblink) {
       cluster.queue(
@@ -39,8 +45,6 @@ const scrapPage = require("./tasks/scrapPage");
     } else {
       cluster.queue(title.imdblink, scrapPage);
     }
-
-    if (counter % 3 === 0) break;
   }
 
   await cluster.idle();
